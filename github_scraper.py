@@ -4,7 +4,6 @@
 """
 import asyncio
 import logging
-import sys
 from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -21,8 +20,8 @@ async def main():
     results = await scrape_all_currencies()
 
     if not any(results.values()):
-        logger.error("لم يُعثر على أي أسعار!")
-        sys.exit(1)
+        logger.warning("⚠️ لم يُعثر على أي أسعار من الويب — سيتم الاحتفاظ بآخر الأسعار في Firestore")
+        # لا نوقف العملية — نترك Firestore كما هو
 
     # ── الكتابة في Firestore ──
     import firebase_admin

@@ -89,16 +89,43 @@ async def scrape_central_bank() -> Optional[tuple[float, float]]:
 
 async def scrape_lirat_org_usd() -> Optional[tuple[float, float]]:
     """اسحب سعر الدولار من lirat.org"""
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=HEADERS) as client:
-            resp = await client.get("https://lirat.org", follow_redirects=True)
-            resp.raise_for_status()
-        b, s = extract_prices(BeautifulSoup(resp.text, "html.parser").get_text(separator=" "))
-        if b and s:
-            logger.info(f"lirat.org USD: buy={b}, sell={s}")
-            return b, s
-    except Exception as e:
-        logger.error(f"lirat.org error: {e}")
+    urls_to_try = [
+        "https://lirat.org",
+        "https://lirat.org/usd",
+        "https://lirat.org/dollar",
+        "https://lirat.org/api/rates",
+        "https://lirat.org/api/v1/rates",
+    ]
+    for url in urls_to_try:
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=HEADERS) as client:
+                resp = await client.get(url, follow_redirects=True)
+                if resp.status_code != 200:
+                    continue
+
+            # حاول JSON أولاً
+            try:
+                data = resp.json()
+                text = str(data)
+            except Exception:
+                text = resp.text
+
+            # ابحث في __NEXT_DATA__ (Next.js)
+            import re, json as _json
+            m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', text, re.DOTALL)
+            if m:
+                try:
+                    nd = _json.loads(m.group(1))
+                    text = str(nd)
+                except Exception:
+                    pass
+
+            b, s = extract_prices(text)
+            if b and s:
+                logger.info(f"lirat.org ({url}): buy={b}, sell={s}")
+                return b, s
+        except Exception as e:
+            logger.warning(f"lirat.org ({url}): {e}")
     return None
 
 
@@ -120,17 +147,33 @@ async def scrape_dollar_syria() -> Optional[tuple[float, float]]:
 
 async def scrape_sarafa_sy() -> Optional[tuple[float, float]]:
     """اسحب سعر الدولار من صرافة سوريا"""
+    import re, json as _json
     urls = [
-        "https://xn--mgbah1a3hjkrd.com",       # صرافة.com
-        "https://sarafa.sy",
-        "https://www.sarafa.sy",
+        "https://xn--mgbah1a3hjkrd.com",
+        "https://xn--mgbah1a3hjkrd.com/api/rates",
+        "https://xn--mgbah1a3hjkrd.com/api/v1/dollar",
     ]
     for url in urls:
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=HEADERS, follow_redirects=True) as client:
                 resp = await client.get(url)
-                resp.raise_for_status()
-            b, s = extract_prices(BeautifulSoup(resp.text, "html.parser").get_text(separator=" "))
+                if resp.status_code != 200:
+                    continue
+
+            try:
+                text = str(resp.json())
+            except Exception:
+                text = resp.text
+
+            # ابحث في __NEXT_DATA__
+            m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', text, re.DOTALL)
+            if m:
+                try:
+                    text = str(_json.loads(m.group(1)))
+                except Exception:
+                    pass
+
+            b, s = extract_prices(text)
             if b and s:
                 logger.info(f"sarafa.sy ({url}): buy={b}, sell={s}")
                 return b, s
