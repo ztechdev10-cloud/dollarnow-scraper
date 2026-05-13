@@ -21,7 +21,7 @@ jobs:
           cache: 'pip'
 
       - name: تثبيت المكتبات
-        run: pip install httpx beautifulsoup4 firebase-admin
+        run: pip install httpx beautifulsoup4 firebase-admin python-dotenv
 
       - name: إنشاء ملف Firebase
         run: echo '${{ secrets.FIREBASE_CREDENTIALS }}' > firebase-credentials.json
