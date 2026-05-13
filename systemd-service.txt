@@ -1,0 +1,30 @@
+# ملف خدمة Linux systemd
+# انسخ إلى /etc/systemd/system/dollar-scraper.service
+# ثم شغّل:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable dollar-scraper
+#   sudo systemctl start dollar-scraper
+
+[Unit]
+Description=Dollar Rate Syria Scraper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/dollar-scraper
+EnvironmentFile=/home/ubuntu/dollar-scraper/.env
+ExecStart=/home/ubuntu/dollar-scraper/venv/bin/python main.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dollar-scraper
+
+# حدود الموارد
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

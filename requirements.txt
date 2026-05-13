@@ -1,0 +1,14 @@
+# Python 3.11+
+telethon==1.37.0
+beautifulsoup4==4.12.3
+httpx==0.27.2
+firebase-admin==6.6.0
+APScheduler==3.10.4
+python-dotenv==1.0.1
+
+# Typing improvements
+typing-extensions==4.12.2
+
+# اختبارات
+pytest==8.3.3
+pytest-asyncio==0.24.0
