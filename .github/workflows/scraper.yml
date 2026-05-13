@@ -2,7 +2,7 @@ name: دولار ناو — تحديث الأسعار
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # كل 15 دقيقة
+    - cron: '*/30 * * * *'   # كل 30 دقيقة
   workflow_dispatch:          # تشغيل يدوي
 
 jobs:
