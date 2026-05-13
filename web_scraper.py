@@ -595,27 +595,25 @@ async def scrape_all_websites() -> list[RawRate]:
     لا سعر السوق الموازي.
     """
     scrapers = {
-        "telegram_web":  scrape_telegram_channels_web,  # ← الأولوية القصوى
-        "sp_today":      scrape_sp_today,               # ← موثوق جداً (URL مصحح)
-        "sp_today_api":  scrape_sp_today_api,           # ← API sp-today احتياطي
-        "lirat_org":     scrape_lirat_org_usd,          # ← موثوق
-        "dollar_syria":  scrape_dollar_syria,           # ← جيد
-        "sarafa_sy":     scrape_sarafa_sy,              # ← احتياطي
+        "telegram_web":  scrape_telegram_channels_web,  # ✅ مجرَّب — صحيح
+        "sp_today":      scrape_sp_today,               # ✅ مجرَّب — صحيح
+        "sp_today_api":  scrape_sp_today_api,           # ✅ احتياطي sp-today
+        "dollar_syria":  scrape_dollar_syria,           # ⚠️  نجرّبه
         "facebook_1":    lambda: scrape_facebook_page(
             "https://m.facebook.com/share/18gXHBwtd2/", "فيسبوك"
         ),
-        # ❌ central_bank  — سعر رسمي ≠ سعر السوق
-        # ❌ fawaz_api     — API عالمي ≠ سعر السوق السوري
+        # ❌ sarafa_sy  — يعطي سعر ليرة تركية (~49,000) لا دولار!
+        # ❌ lirat_org  — سعر أقل بـ 8% (غير موثوق)
+        # ❌ central_bank — سعر رسمي ≠ سوق موازي
+        # ❌ fawaz_api  — سعر عالمي ≠ سوق سوري
     }
     # موثوقية كل مصدر — كلما كان أعلى كان وزنه في الوسيط أكبر
     RELIABILITY = {
         "telegram_web": 0.95,
-        "sp_today":     0.93,
+        "sp_today":     0.95,
         "sp_today_api": 0.90,
-        "lirat_org":    0.88,
-        "dollar_syria": 0.85,
-        "sarafa_sy":    0.80,
-        "facebook_1":   0.75,
+        "dollar_syria": 0.80,
+        "facebook_1":   0.70,
     }
 
     results: list[RawRate] = []
@@ -652,8 +650,8 @@ def _weighted_median(rates: list[RawRate], key: str) -> float:
     prices = sorted(v[0] for v in values)
     median = prices[len(prices) // 2]
 
-    # 2. ارفض الأسعار التي تبعد أكثر من 15% عن الوسيط
-    filtered = [(p, w) for p, w in values if abs(p - median) / median <= 0.15]
+    # 2. ارفض الأسعار التي تبعد أكثر من 6% عن الوسيط
+    filtered = [(p, w) for p, w in values if abs(p - median) / median <= 0.06]
     if not filtered:
         filtered = values  # إذا الكل شاذ، خذ الكل
 
