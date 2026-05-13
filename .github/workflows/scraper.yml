@@ -1,0 +1,32 @@
+name: دولار ناو — تحديث الأسعار
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # كل 15 دقيقة
+  workflow_dispatch:          # تشغيل يدوي
+
+jobs:
+  update-rates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: تحميل الكود
+        uses: actions/checkout@v4
+
+      - name: تثبيت Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: تثبيت المكتبات
+        run: pip install httpx beautifulsoup4 firebase-admin
+
+      - name: إنشاء ملف Firebase
+        run: echo '${{ secrets.FIREBASE_CREDENTIALS }}' > firebase-credentials.json
+
+      - name: تحديث الأسعار
+        run: python github_scraper.py
+        env:
+          FIREBASE_PROJECT_ID: doolr-ce18b
