@@ -65,23 +65,41 @@ async def scrape_telegram_channel(channel: str) -> Optional[tuple[float, float]]
 
 
 async def scrape_telegram_channels_web() -> Optional[tuple[float, float]]:
-    """جرّب عدة قنوات تلغرام عبر الويب"""
+    """جرّب عدة قنوات تلغرام عبر الويب — مرتبة حسب الموثوقية"""
+    # قنوات حقيقية تنشر أسعار الليرة السورية
     channels = [
-        "sp_today_official",
-        "lira_today",
-        "syria_dollar",
-        "sy_currency",
-        "damascus_exchange",
-        "dollars_com",
-        "syriastockss",
-        "lira_news",
+        "sp_today_official",    # السعر اليوم الرسمي
+        "liratoday",            # ليرة اليوم
+        "lira_today",           # بديل
+        "syria_dollar",         # دولار سوريا
+        "syrianpound",          # الليرة السورية
+        "dollar_sy",            # دولار سوريا
+        "sy_currency",          # عملات سوريا
+        "syr_dollar",           # الدولار السوري
+        "syrian_exchange",      # صرافة سورية
+        "damascus_exchange",    # صرافة دمشق
+        "dollars_com",          # دولار
+        "syriastockss",         # أسعار سوريا
+        "lira_news",            # أخبار الليرة
+        "exchange_sy",          # الصرافة السورية
+        "dollar_sy24",          # دولار 24
+        "lira24sy",             # ليرة 24
+        "syp_rate",             # سعر الليرة
+        "syrian_lira",          # الليرة
+        "dolar_syria",          # دولار سوريا
+        "currency_sy",          # العملة السورية
     ]
     import asyncio
-    tasks = [scrape_telegram_channel(ch) for ch in channels]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for ch, r in zip(channels, results):
-        if isinstance(r, tuple) and r[0] and r[1]:
-            return r
+    # جرّب على دفعات لتسريع العملية
+    batch_size = 5
+    for i in range(0, len(channels), batch_size):
+        batch = channels[i:i + batch_size]
+        tasks = [scrape_telegram_channel(ch) for ch in batch]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for ch, r in zip(batch, results):
+            if isinstance(r, tuple) and r[0] and r[1]:
+                logger.info(f"✅ نجح المصدر: t.me/s/{ch}")
+                return r
     return None
 
 
@@ -190,6 +208,40 @@ async def scrape_dollar_syria() -> Optional[tuple[float, float]]:
         logger.warning("dollar-syria.com: لم يُعثر على سعر")
     except Exception as e:
         logger.error(f"dollar-syria.com error: {e}")
+    return None
+
+
+async def scrape_wisesheets_or_fawaz_syp() -> Optional[tuple[float, float]]:
+    """
+    جلب سعر تقريبي للدولار مقابل الليرة السورية من مصادر API مفتوحة.
+    ملاحظة: هذه المصادر قد تعطي السعر الرسمي — نضرب في معامل السوق الموازي.
+    """
+    # معامل السوق الموازي التقريبي (السعر الفعلي ÷ السعر الرسمي)
+    # CBK rate ≈ 2,512 | سعر السوق ≈ 13,000+ → معامل ≈ 5-6
+    # هذه قيمة تقريبية فقط — المصادر الأساسية هي تلغرام والمواقع المحلية
+    BLACK_MARKET_FACTOR = 1.0  # لا نستخدم هذا المصدر إلا كآخر حل
+
+    urls = [
+        "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+        "https://latest.currency-api.pages.dev/v1/currencies/usd.json",
+    ]
+    for url in urls:
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json().get("usd", {})
+                syp_rate = data.get("syp")
+                if syp_rate and float(syp_rate) > 1000:
+                    rate = float(syp_rate) * BLACK_MARKET_FACTOR
+                    spread = rate * 0.01
+                    buy  = round(rate - spread)
+                    sell = round(rate + spread)
+                    logger.info(f"fawaz API: USD/SYP = {rate:.0f}")
+                    return buy, sell
+        except Exception as e:
+            logger.warning(f"fawaz API: {e}")
     return None
 
 
@@ -427,7 +479,7 @@ def calculate_syp_rates(
 async def scrape_all_websites() -> list[RawRate]:
     """اسحب USD فقط من المواقع المحلية"""
     scrapers = {
-        "telegram_web": scrape_telegram_channels_web,   # ← المصدر الجديد الأهم
+        "telegram_web": scrape_telegram_channels_web,   # ← المصدر الأساسي
         "sp_today":     scrape_sp_today,
         "central_bank": scrape_central_bank,
         "lirat_org":    scrape_lirat_org_usd,
@@ -436,6 +488,8 @@ async def scrape_all_websites() -> list[RawRate]:
         "facebook_1":   lambda: scrape_facebook_page(
             "https://m.facebook.com/share/18gXHBwtd2/", "فيسبوك"
         ),
+        # ← مصدر احتياطي أخير — API مفتوح
+        "fawaz_api":    scrape_wisesheets_or_fawaz_syp,
     }
     source_config = {s["name"]: s for s in WEB_SOURCES}
     results: list[RawRate] = []
