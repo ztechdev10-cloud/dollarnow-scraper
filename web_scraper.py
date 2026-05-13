@@ -104,38 +104,150 @@ async def scrape_telegram_channels_web() -> Optional[tuple[float, float]]:
 
 
 async def scrape_sp_today() -> Optional[tuple[float, float]]:
-    """اسحب سعر الدولار من sp-today.com (شراء، بيع)"""
-    url = "https://sp-today.com/currency/us_dollar"
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=HEADERS) as client:
-            resp = await client.get(url, follow_redirects=True)
-            resp.raise_for_status()
+    """
+    اسحب سعر الدولار من sp-today.com
+    الصفحة SSR — تعمل بدون JavaScript من GitHub Actions
+    """
+    import re
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+    # ← الرابط الصحيح: us-dollar بـ hyphen لا us_dollar
+    urls = [
+        "https://sp-today.com/currency/us-dollar",          # English version — أسهل للـ parsing
+        "https://sp-today.com/ar/currency/us-dollar",       # Arabic version
+        "https://sp-today.com/currency/us_dollar",          # احتياطي (underscore قديم)
+    ]
 
-        # محاولة 1: جدول
-        table = soup.find("table", class_=lambda c: c and "price" in c.lower())
-        if table:
-            for row in table.find_all("tr"):
-                cells = row.find_all("td")
-                if len(cells) >= 2:
-                    b, s = extract_prices(" ".join(c.get_text(strip=True) for c in cells))
-                    if b and s:
-                        logger.info(f"sp-today: buy={b}, sell={s}")
-                        return b, s
+    HEADERS_SPTODAY = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        "Referer":         "https://sp-today.com/",
+    }
 
-        # محاولة 2: كل النص
-        b, s = extract_prices(soup.get_text())
-        if b and s:
-            logger.info(f"sp-today (full-text): buy={b}, sell={s}")
-            return b, s
+    for url in urls:
+        try:
+            async with httpx.AsyncClient(
+                timeout=REQUEST_TIMEOUT,
+                headers=HEADERS_SPTODAY,
+                follow_redirects=True
+            ) as client:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    logger.warning(f"sp-today ({url}): {resp.status_code}")
+                    continue
 
-        logger.warning("sp-today: لم يُعثر على سعر")
-        return None
+            text = resp.text
+            soup = BeautifulSoup(text, "html.parser")
+            page_text = soup.get_text(separator=" ")
 
-    except Exception as e:
-        logger.error(f"sp-today error: {e}")
-        return None
+            # محاولة 1: regex مباشر على النص الإنجليزي "Buy X Sell Y"
+            m = re.search(
+                r"Buy\s+([\d,]+)\s*SYP.*?Sell\s+([\d,]+)\s*SYP",
+                page_text, re.IGNORECASE | re.DOTALL
+            )
+            if m:
+                buy  = float(m.group(1).replace(",", ""))
+                sell = float(m.group(2).replace(",", ""))
+                if 5000 < buy < 1_000_000 and 5000 < sell < 1_000_000:
+                    logger.info(f"sp-today ✅ buy={buy:.0f}, sell={sell:.0f} ({url})")
+                    return min(buy, sell), max(buy, sell)
+
+            # محاولة 2: regex "Sell X Buy Y"
+            m = re.search(
+                r"Sell\s+([\d,]+)\s*SYP.*?Buy\s+([\d,]+)\s*SYP",
+                page_text, re.IGNORECASE | re.DOTALL
+            )
+            if m:
+                sell = float(m.group(1).replace(",", ""))
+                buy  = float(m.group(2).replace(",", ""))
+                if 5000 < buy < 1_000_000 and 5000 < sell < 1_000_000:
+                    logger.info(f"sp-today ✅ buy={buy:.0f}, sell={sell:.0f} (sell-first)")
+                    return min(buy, sell), max(buy, sell)
+
+            # محاولة 3: أول جدول تحويل (صف "1 USD = X SYP buy | Y SYP sell")
+            for table in soup.find_all("table"):
+                rows = table.find_all("tr")
+                for row in rows:
+                    cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
+                    row_text = " ".join(cells)
+                    # ابحث عن صف يحتوي "1" و SYP
+                    nums = re.findall(r"[\d,]{5,}", row_text)
+                    if len(nums) >= 2:
+                        v1 = float(nums[0].replace(",", ""))
+                        v2 = float(nums[1].replace(",", ""))
+                        if 5000 < v1 < 1_000_000 and 5000 < v2 < 1_000_000:
+                            logger.info(f"sp-today (table) ✅ buy={min(v1,v2):.0f}, sell={max(v1,v2):.0f}")
+                            return min(v1, v2), max(v1, v2)
+
+            # محاولة 4: extract_prices العام
+            b, s = extract_prices(page_text)
+            if b and s:
+                logger.info(f"sp-today (extract) ✅ buy={b:.0f}, sell={s:.0f}")
+                return b, s
+
+            logger.warning(f"sp-today: لم يُعثر على سعر في {url}")
+
+        except Exception as e:
+            logger.warning(f"sp-today ({url}): {e}")
+
+    logger.error("sp-today: فشلت جميع المحاولات")
+    return None
+
+
+async def scrape_sp_today_api() -> Optional[tuple[float, float]]:
+    """
+    اسحب من sp-today API غير الرسمي — JSON مباشر بدون HTML parsing
+    """
+    import re, json as _json
+
+    # بعض endpoints معروفة من sp-today
+    api_urls = [
+        "https://sp-today.com/api/currency/USD",
+        "https://sp-today.com/api/rates",
+        "https://sp-today.com/api/v1/rates",
+        "https://sp-today.com/api/v1/currency/USD",
+        "https://sp-today.com/widget-data?currency=USD",
+    ]
+
+    for url in api_urls:
+        try:
+            async with httpx.AsyncClient(timeout=15, headers=HEADERS, follow_redirects=True) as client:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    continue
+                try:
+                    data = resp.json()
+                    text = str(data)
+                except Exception:
+                    text = resp.text
+
+                b, s = extract_prices(text)
+                if b and s:
+                    logger.info(f"sp-today API ✅ buy={b:.0f}, sell={s:.0f} ({url})")
+                    return b, s
+
+                # ابحث عن buy/sell مباشرة في JSON
+                for key_buy in ["buy", "purchase", "buying", "bid"]:
+                    for key_sell in ["sell", "sale", "selling", "ask"]:
+                        if isinstance(data, dict):
+                            buy_val  = data.get(key_buy) or data.get(key_buy.upper())
+                            sell_val = data.get(key_sell) or data.get(key_sell.upper())
+                            if buy_val and sell_val:
+                                try:
+                                    b2 = float(str(buy_val).replace(",", ""))
+                                    s2 = float(str(sell_val).replace(",", ""))
+                                    if 5000 < b2 < 1_000_000:
+                                        logger.info(f"sp-today API JSON ✅ buy={b2:.0f}, sell={s2:.0f}")
+                                        return min(b2, s2), max(b2, s2)
+                                except Exception:
+                                    pass
+        except Exception as e:
+            logger.debug(f"sp-today API ({url}): {e}")
+
+    return None
 
 
 async def scrape_central_bank() -> Optional[tuple[float, float]]:
@@ -483,12 +595,13 @@ async def scrape_all_websites() -> list[RawRate]:
     لا سعر السوق الموازي.
     """
     scrapers = {
-        "telegram_web": scrape_telegram_channels_web,   # ← الأولوية القصوى
-        "sp_today":     scrape_sp_today,                # ← موثوق جداً
-        "lirat_org":    scrape_lirat_org_usd,           # ← موثوق
-        "dollar_syria": scrape_dollar_syria,            # ← جيد
-        "sarafa_sy":    scrape_sarafa_sy,               # ← احتياطي
-        "facebook_1":   lambda: scrape_facebook_page(
+        "telegram_web":  scrape_telegram_channels_web,  # ← الأولوية القصوى
+        "sp_today":      scrape_sp_today,               # ← موثوق جداً (URL مصحح)
+        "sp_today_api":  scrape_sp_today_api,           # ← API sp-today احتياطي
+        "lirat_org":     scrape_lirat_org_usd,          # ← موثوق
+        "dollar_syria":  scrape_dollar_syria,           # ← جيد
+        "sarafa_sy":     scrape_sarafa_sy,              # ← احتياطي
+        "facebook_1":    lambda: scrape_facebook_page(
             "https://m.facebook.com/share/18gXHBwtd2/", "فيسبوك"
         ),
         # ❌ central_bank  — سعر رسمي ≠ سعر السوق
@@ -498,6 +611,7 @@ async def scrape_all_websites() -> list[RawRate]:
     RELIABILITY = {
         "telegram_web": 0.95,
         "sp_today":     0.93,
+        "sp_today_api": 0.90,
         "lirat_org":    0.88,
         "dollar_syria": 0.85,
         "sarafa_sy":    0.80,
