@@ -6,8 +6,16 @@ from typing import Optional
 import httpx
 from bs4 import BeautifulSoup
 
-from config import MIN_DOLLAR_RATE, MAX_DOLLAR_RATE, WEB_SOURCES
-from telegram_monitor import RawRate, extract_prices
+from models import RawRate, extract_prices
+
+# WEB_SOURCES مضمّنة هنا مباشرة (تجنّباً لاستيراد config الذي يحتاج متغيرات Telegram)
+WEB_SOURCES = [
+    {"name": "sp_today",     "url": "https://sp-today.com/currency/us_dollar", "reliability": 0.95},
+    {"name": "central_bank", "url": "https://lira.cb.gov.sy",                  "reliability": 0.70},
+    {"name": "lirat_org",    "url": "https://lirat.org",                       "reliability": 0.92},
+    {"name": "dollar_syria", "url": "https://dollar-syria.com",                "reliability": 0.88},
+    {"name": "sarafa_sy",    "url": "https://xn--mgbah1a3hjkrd.com",           "reliability": 0.85},
+]
 
 logger = logging.getLogger(__name__)
 
