@@ -477,37 +477,82 @@ def calculate_syp_rates(
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def scrape_all_websites() -> list[RawRate]:
-    """اسحب USD فقط من المواقع المحلية"""
+    """
+    اسحب USD/SYP من المواقع المحلية فقط.
+    ملاحظة: لا نستخدم البنك المركزي ولا fawaz API لأنهما يعطيان السعر الرسمي
+    لا سعر السوق الموازي.
+    """
     scrapers = {
-        "telegram_web": scrape_telegram_channels_web,   # ← المصدر الأساسي
-        "sp_today":     scrape_sp_today,
-        "central_bank": scrape_central_bank,
-        "lirat_org":    scrape_lirat_org_usd,
-        "dollar_syria": scrape_dollar_syria,
-        "sarafa_sy":    scrape_sarafa_sy,
+        "telegram_web": scrape_telegram_channels_web,   # ← الأولوية القصوى
+        "sp_today":     scrape_sp_today,                # ← موثوق جداً
+        "lirat_org":    scrape_lirat_org_usd,           # ← موثوق
+        "dollar_syria": scrape_dollar_syria,            # ← جيد
+        "sarafa_sy":    scrape_sarafa_sy,               # ← احتياطي
         "facebook_1":   lambda: scrape_facebook_page(
             "https://m.facebook.com/share/18gXHBwtd2/", "فيسبوك"
         ),
-        # ← مصدر احتياطي أخير — API مفتوح
-        "fawaz_api":    scrape_wisesheets_or_fawaz_syp,
+        # ❌ central_bank  — سعر رسمي ≠ سعر السوق
+        # ❌ fawaz_api     — API عالمي ≠ سعر السوق السوري
     }
-    source_config = {s["name"]: s for s in WEB_SOURCES}
-    results: list[RawRate] = []
+    # موثوقية كل مصدر — كلما كان أعلى كان وزنه في الوسيط أكبر
+    RELIABILITY = {
+        "telegram_web": 0.95,
+        "sp_today":     0.93,
+        "lirat_org":    0.88,
+        "dollar_syria": 0.85,
+        "sarafa_sy":    0.80,
+        "facebook_1":   0.75,
+    }
 
+    results: list[RawRate] = []
     for name, fn in scrapers.items():
-        result = await fn()
-        if result:
-            buy, sell = result
-            reliability = source_config.get(name, {}).get("reliability", 0.7)
-            results.append(RawRate(
-                source=f"web_{name}",
-                buy=buy, sell=sell,
-                timestamp=datetime.now(timezone.utc),
-                reliability=reliability,
-                raw_text=f"web:{name}",
-            ))
+        try:
+            result = await fn()
+            if result:
+                buy, sell = result
+                results.append(RawRate(
+                    source=f"web_{name}",
+                    buy=buy, sell=sell,
+                    timestamp=datetime.now(timezone.utc),
+                    reliability=RELIABILITY.get(name, 0.7),
+                    raw_text=f"web:{name}",
+                ))
+        except Exception as e:
+            logger.warning(f"خطأ في {name}: {e}")
 
     return results
+
+
+def _weighted_median(rates: list[RawRate], key: str) -> float:
+    """
+    وسيط موزون حسب الموثوقية — يرفض الأسعار الشاذة تلقائياً.
+    key: 'buy' أو 'sell'
+    """
+    values = [(getattr(r, key), r.reliability) for r in rates if getattr(r, key)]
+    if not values:
+        return 0.0
+    if len(values) == 1:
+        return values[0][0]
+
+    # 1. احسب الوسيط البسيط لكشف الشاذ
+    prices = sorted(v[0] for v in values)
+    median = prices[len(prices) // 2]
+
+    # 2. ارفض الأسعار التي تبعد أكثر من 15% عن الوسيط
+    filtered = [(p, w) for p, w in values if abs(p - median) / median <= 0.15]
+    if not filtered:
+        filtered = values  # إذا الكل شاذ، خذ الكل
+
+    # 3. متوسط موزون بالموثوقية
+    total_weight = sum(w for _, w in filtered)
+    result = sum(p * w for p, w in filtered) / total_weight
+
+    logger.info(
+        f"  مصادر مقبولة: {len(filtered)}/{len(values)} | "
+        f"نتيجة: {result:.0f} | "
+        f"مرفوضة: {[round(p) for p,_ in values if abs(p-median)/median > 0.15]}"
+    )
+    return result
 
 
 async def scrape_all_currencies() -> dict[str, list[RawRate]]:
@@ -518,7 +563,7 @@ async def scrape_all_currencies() -> dict[str, list[RawRate]]:
     1. اجلب USD/SYP من المصادر المحلية (sp-today, lirat.org, إلخ).
     2. اجلب أسعار الصرف الدولية من Frankfurter API.
     3. اجلب سعر الذهب من metals.live / goldprice.org.
-    4. احسب بقية العملات بالضرب.
+    4. احسب بقية العملات بالضرب مع فلترة الشاذ.
     """
     results: dict[str, list[RawRate]] = {
         c: [] for c in ["USD", "EUR", "TRY", "SAR", "JOD", "XAU"]
@@ -528,17 +573,21 @@ async def scrape_all_currencies() -> dict[str, list[RawRate]]:
     usd_rates = await scrape_all_websites()
     results["USD"].extend(usd_rates)
 
-    # احسب متوسط بسيط من مصادر USD
-    usd_buys  = [r.buy  for r in usd_rates if r.buy]
-    usd_sells = [r.sell for r in usd_rates if r.sell]
+    # لوغ كل مصدر ناجح
+    for r in usd_rates:
+        logger.info(f"  [{r.source}] بيع={round(r.sell):,} | شراء={round(r.buy):,} | موثوقية={r.reliability}")
+
+    usd_sells = [r for r in usd_rates if r.sell]
+    usd_buys  = [r for r in usd_rates if r.buy]
 
     if not usd_sells:
         logger.warning("لا يوجد سعر USD — تخطّي حساب العملات الأخرى")
         return results
 
-    avg_usd_buy  = sum(usd_buys)  / len(usd_buys)  if usd_buys  else sum(usd_sells) / len(usd_sells)
-    avg_usd_sell = sum(usd_sells) / len(usd_sells)
-    logger.info(f"متوسط USD/SYP: buy={avg_usd_buy:.0f}, sell={avg_usd_sell:.0f}")
+    # استخدم الوسيط الموزون بدلاً من المتوسط لرفض الأسعار الشاذة
+    avg_usd_sell = _weighted_median(usd_sells, "sell")
+    avg_usd_buy  = _weighted_median(usd_buys,  "buy") if usd_buys else avg_usd_sell * 0.995
+    logger.info(f"✅ USD/SYP النهائي: بيع={avg_usd_sell:.0f} | شراء={avg_usd_buy:.0f}")
 
     # ── خطوة 2+3: أسعار الصرف الدولية + الذهب ───────────────────────────
     import asyncio
