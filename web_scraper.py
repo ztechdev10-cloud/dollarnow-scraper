@@ -10,6 +10,7 @@ from models import RawRate, extract_prices
 
 # WEB_SOURCES مضمّنة هنا مباشرة (تجنّباً لاستيراد config الذي يحتاج متغيرات Telegram)
 WEB_SOURCES = [
+    {"name": "telegram_web", "url": "https://t.me/s/sp_today_official",        "reliability": 0.95},
     {"name": "sp_today",     "url": "https://sp-today.com/currency/us_dollar", "reliability": 0.95},
     {"name": "central_bank", "url": "https://lira.cb.gov.sy",                  "reliability": 0.70},
     {"name": "lirat_org",    "url": "https://lirat.org",                       "reliability": 0.92},
@@ -36,6 +37,53 @@ KARAT_21_FACTOR  = 21 / 24   # نسبة نقاء عيار 21
 # ══════════════════════════════════════════════════════════════════════════════
 #  1. جلب سعر الدولار / الليرة السورية  (المصدر الأساسي)
 # ══════════════════════════════════════════════════════════════════════════════
+
+async def scrape_telegram_channel(channel: str) -> Optional[tuple[float, float]]:
+    """
+    اسحب آخر سعر من قناة تلغرام عبر t.me/s/ (server-side rendered — يعمل بدون JavaScript)
+    """
+    url = f"https://t.me/s/{channel}"
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=HEADERS, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                logger.warning(f"t.me/s/{channel}: {resp.status_code}")
+                return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # الرسائل مرتبة من الأقدم للأحدث — نقرأها عكسياً لنأخذ الأحدث
+        messages = soup.find_all("div", class_="tgme_widget_message_text")
+        for msg in reversed(messages):
+            text = msg.get_text(separator=" ")
+            b, s = extract_prices(text)
+            if b and s:
+                logger.info(f"t.me/s/{channel}: buy={b}, sell={s}")
+                return b, s
+    except Exception as e:
+        logger.warning(f"t.me/s/{channel}: {e}")
+    return None
+
+
+async def scrape_telegram_channels_web() -> Optional[tuple[float, float]]:
+    """جرّب عدة قنوات تلغرام عبر الويب"""
+    channels = [
+        "sp_today_official",
+        "lira_today",
+        "syria_dollar",
+        "sy_currency",
+        "damascus_exchange",
+        "dollars_com",
+        "syriastockss",
+        "lira_news",
+    ]
+    import asyncio
+    tasks = [scrape_telegram_channel(ch) for ch in channels]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for ch, r in zip(channels, results):
+        if isinstance(r, tuple) and r[0] and r[1]:
+            return r
+    return None
+
 
 async def scrape_sp_today() -> Optional[tuple[float, float]]:
     """اسحب سعر الدولار من sp-today.com (شراء، بيع)"""
@@ -379,6 +427,7 @@ def calculate_syp_rates(
 async def scrape_all_websites() -> list[RawRate]:
     """اسحب USD فقط من المواقع المحلية"""
     scrapers = {
+        "telegram_web": scrape_telegram_channels_web,   # ← المصدر الجديد الأهم
         "sp_today":     scrape_sp_today,
         "central_bank": scrape_central_bank,
         "lirat_org":    scrape_lirat_org_usd,
