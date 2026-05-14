@@ -32,17 +32,37 @@ class TelegramMonitor:
         self._channel_map = {ch["username"]: ch for ch in TELEGRAM_CHANNELS}
 
     async def start(self):
-        """ابدأ الاستماع للقنوات"""
-        await self._client.start(phone=TELEGRAM_PHONE)
-        logger.info("Telegram client connected")
+        """ابدأ الاستماع للقنوات — مع إعادة الاتصال التلقائية عند الانقطاع"""
 
-        # استمع للرسائل الجديدة في كل القنوات
+        # سجّل المعالج مرة واحدة فقط (يبقى صالحاً عبر إعادات الاتصال)
         @self._client.on(events.NewMessage(chats=list(self._channel_map.keys())))
         async def handler(event: events.NewMessage.Event):
             await self._process_message(event.message)
 
-        logger.info(f"Monitoring {len(self._channel_map)} Telegram channels")
-        await self._client.run_until_disconnected()
+        retry_delay = 10  # ثانية — يزيد تدريجياً حتى 120 ثانية
+
+        while True:
+            try:
+                if not self._client.is_connected():
+                    await self._client.start(phone=TELEGRAM_PHONE)
+                    logger.info("✅ Telegram client connected")
+                    retry_delay = 10  # أعد ضبط الانتظار بعد نجاح الاتصال
+
+                logger.info(f"📡 Monitoring {len(self._channel_map)} Telegram channels")
+                await self._client.run_until_disconnected()
+                logger.warning("⚠️ Telegram disconnected unexpectedly — will reconnect...")
+
+            except (ConnectionError, OSError) as e:
+                logger.warning(f"🔌 Telegram connection error: {e}")
+            except asyncio.CancelledError:
+                logger.info("Telegram monitor cancelled — stopping")
+                break
+            except Exception as e:
+                logger.error(f"❌ Unexpected Telegram error: {e}")
+
+            logger.info(f"🔄 Reconnecting in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(int(retry_delay * 1.5), 120)  # زيادة تدريجية حتى 120 ثانية
 
     async def _process_message(self, message: Message):
         """معالجة رسالة واستخراج السعر منها"""

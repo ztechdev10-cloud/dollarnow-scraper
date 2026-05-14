@@ -141,14 +141,20 @@ async def main():
     await scrape_websites_job()
     await aggregate_job()
 
-    # شغّل مراقب تلغرام (يعمل حتى الإيقاف)
+    # شغّل مراقب تلغرام (يعمل حتى الإيقاف — مع إعادة تشغيل تلقائية عند أي خطأ غير متوقع)
     telegram = TelegramMonitor(on_rate_received=on_telegram_rate)
-    try:
-        await telegram.start()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("إيقاف السكرابر...")
-        scheduler.shutdown()
-        await telegram.stop()
+    while True:
+        try:
+            await telegram.start()
+            break  # خرج بشكل طبيعي (CancelledError)
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("إيقاف السكرابر...")
+            scheduler.shutdown()
+            await telegram.stop()
+            break
+        except Exception as e:
+            logger.error(f"💥 خطأ حرج في مراقب تلغرام: {e} — إعادة التشغيل خلال 30 ثانية...")
+            await asyncio.sleep(30)
 
 
 if __name__ == "__main__":

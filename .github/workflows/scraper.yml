@@ -2,13 +2,13 @@ name: دولار ناو — تحديث الأسعار
 
 on:
   schedule:
-    - cron: '0 * * * *'   # كل ساعة بالضبط (00 دقيقة من كل ساعة)
-  workflow_dispatch:        # تشغيل يدوي عند الحاجة
+    - cron: '8,38 * * * *'  # كل 30 دقيقة (8 و38 من كل ساعة — بعيداً عن ذروة الطلب)
+  workflow_dispatch:         # تشغيل يدوي عند الحاجة
 
 jobs:
   update-rates:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
 
     steps:
       - name: تحميل الكود
