@@ -2,13 +2,13 @@ name: دولار ناو — تحديث الأسعار
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # كل 30 دقيقة
-  workflow_dispatch:          # تشغيل يدوي
+    - cron: '0 * * * *'   # كل ساعة بالضبط (00 دقيقة من كل ساعة)
+  workflow_dispatch:        # تشغيل يدوي عند الحاجة
 
 jobs:
   update-rates:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
 
     steps:
       - name: تحميل الكود
@@ -30,3 +30,8 @@ jobs:
         run: python github_scraper.py
         env:
           FIREBASE_PROJECT_ID: doolr-ce18b
+        continue-on-error: false
+
+      - name: تلخيص النتيجة
+        if: always()
+        run: echo "انتهى التشغيل — $(date '+%Y-%m-%d %H:%M:%S UTC')"
