@@ -596,24 +596,20 @@ async def scrape_all_websites() -> list[RawRate]:
     """
     scrapers = {
         "telegram_web":  scrape_telegram_channels_web,  # ✅ مجرَّب — صحيح
-        "sp_today":      scrape_sp_today,               # ✅ مجرَّب — صحيح
+        "sp_today":      scrape_sp_today,               # ✅ مجرَّب — صحيح (المصدر الرئيسي)
         "sp_today_api":  scrape_sp_today_api,           # ✅ احتياطي sp-today
-        "dollar_syria":  scrape_dollar_syria,           # ⚠️  نجرّبه
-        "facebook_1":    lambda: scrape_facebook_page(
-            "https://m.facebook.com/share/18gXHBwtd2/", "فيسبوك"
-        ),
-        # ❌ sarafa_sy  — يعطي سعر ليرة تركية (~49,000) لا دولار!
-        # ❌ lirat_org  — سعر أقل بـ 8% (غير موثوق)
-        # ❌ central_bank — سعر رسمي ≠ سوق موازي
-        # ❌ fawaz_api  — سعر عالمي ≠ سوق سوري
+        # ❌ dollar_syria  — يُرجع قيمة خاطئة (~46,000) من بيئة GitHub Actions
+        # ❌ facebook_1    — يُرجع 400 Bad Request دائماً
+        # ❌ sarafa_sy     — يعطي سعر ليرة تركية (~49,000) لا دولار!
+        # ❌ lirat_org     — سعر أقل بـ 8% (غير موثوق)
+        # ❌ central_bank  — سعر رسمي ≠ سوق موازي
+        # ❌ fawaz_api     — سعر عالمي ≠ سوق سوري
     }
     # موثوقية كل مصدر — كلما كان أعلى كان وزنه في الوسيط أكبر
     RELIABILITY = {
         "telegram_web": 0.95,
         "sp_today":     0.95,
         "sp_today_api": 0.90,
-        "dollar_syria": 0.80,
-        "facebook_1":   0.70,
     }
 
     results: list[RawRate] = []
@@ -647,11 +643,13 @@ def _weighted_median(rates: list[RawRate], key: str) -> float:
         return values[0][0]
 
     # 1. احسب الوسيط البسيط لكشف الشاذ
+    # نستخدم الوسيط الأدنى (lower median) لتفادي تأثير القيم المرتفعة الشاذة
+    # مثال: [13720, 46368] → median = 13720 (الأدنى) لا 46368 (الأعلى)
     prices = sorted(v[0] for v in values)
-    median = prices[len(prices) // 2]
+    median = prices[(len(prices) - 1) // 2]  # ← lower median (الأدنى عند العدد الزوجي)
 
-    # 2. ارفض الأسعار التي تبعد أكثر من 6% عن الوسيط
-    filtered = [(p, w) for p, w in values if abs(p - median) / median <= 0.06]
+    # 2. ارفض الأسعار التي تبعد أكثر من 20% عن الوسيط
+    filtered = [(p, w) for p, w in values if abs(p - median) / median <= 0.20]
     if not filtered:
         filtered = values  # إذا الكل شاذ، خذ الكل
 

@@ -57,6 +57,22 @@ async def main():
         logger.info("═══════════════════════════════════════")
         return
 
+    # ── التحقق من معقولية سعر الدولار (فلتر أمان) ───────────────────────
+    # نطاق سعر USD/SYP المقبول بناءً على البيانات التاريخية
+    USD_MIN = 7_000
+    USD_MAX = 30_000
+
+    usd_rates = results.get("USD", [])
+    if usd_rates:
+        usd_sell = usd_rates[-1].sell
+        if not (USD_MIN <= usd_sell <= USD_MAX):
+            logger.error(
+                f"🚫 سعر USD غير معقول: {usd_sell:,.0f} — خارج النطاق [{USD_MIN:,} - {USD_MAX:,}]"
+                f" — تحديث الوقت فقط بدون تغيير الأسعار"
+            )
+            await touch_all_rates_timestamp(db, now)
+            return
+
     # ── الكتابة في Firestore ──────────────────────────────────────────────
     written = 0
 
