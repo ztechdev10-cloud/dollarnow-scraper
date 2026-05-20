@@ -32,6 +32,7 @@ jobs:
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
           DOWNLOAD_LINK: ${{ secrets.DOWNLOAD_LINK }}
+          JOIN_ONLY: "true"
           PYTHONIOENCODING: utf-8
         run: python railway_spread.py
         timeout-minutes: 340

@@ -127,6 +127,8 @@ SEARCH_TERMS = [
     "جاليات سورية","سوريا الحرة","سوريا الجديدة",
 ]
 
+JOIN_ONLY = os.environ.get("JOIN_ONLY", "false").lower() == "true"
+
 sent_ids = set()
 
 def is_group(chat):
@@ -196,6 +198,10 @@ async def send_to(client, chat, name, members):
             await asyncio.sleep(2)
         except Exception:
             pass
+        if JOIN_ONLY:
+            sent_ids.add(chat.id)
+            print(f"JOINED: {name} ({members})", flush=True)
+            return
         await client.send_message(chat, MESSAGE, parse_mode='md')
         sent_ids.add(chat.id)
         print(f"OK: {name} ({members})", flush=True)
