@@ -1,3 +1,9 @@
-firebase-credentials.json 
-sessions/ 
-.env 
+firebase-credentials.json
+sessions/
+.env
+session_b64.txt
+spread_log.txt
+spread_err.txt
+__pycache__/
+*.pyc
+*.session
