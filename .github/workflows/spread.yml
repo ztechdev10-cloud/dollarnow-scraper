@@ -26,8 +26,14 @@ jobs:
       - name: Restore Telegram session
         run: |
           mkdir -p /tmp
-          echo "${{ secrets.TELEGRAM_SESSION_B64 }}" | base64 -d > /tmp/telegram_session.session
-          echo "Session restored: $(wc -c < /tmp/telegram_session.session) bytes"
+          echo "${{ secrets.TELEGRAM_SESSION_B64 }}" | base64 -d | python3 -c "
+import sys, gzip
+data = sys.stdin.buffer.read()
+try: data = gzip.decompress(data)
+except: pass
+with open('/tmp/telegram_session.session','wb') as f: f.write(data)
+print(f'Session restored: {len(data)} bytes')
+"
 
       - name: Run spread script
         env:

@@ -1,4 +1,4 @@
-import asyncio, os, sys, base64, tempfile
+import asyncio, os, sys, base64, gzip
 sys.stdout.reconfigure(encoding='utf-8')
 
 from dotenv import load_dotenv
@@ -19,9 +19,15 @@ SESSION_B64 = os.environ.get("TELEGRAM_SESSION_B64", "")
 SESSION_PATH = "/tmp/telegram_session"
 
 if SESSION_B64:
+    decoded = base64.b64decode(SESSION_B64)
+    # دعم النسخة المضغوطة (gzip) أو غير المضغوطة
+    try:
+        decoded = gzip.decompress(decoded)
+    except Exception:
+        pass  # ليست مضغوطة، استخدمها كما هي
     with open(SESSION_PATH + ".session", "wb") as f:
-        f.write(base64.b64decode(SESSION_B64))
-    print("SESSION: loaded from env var", flush=True)
+        f.write(decoded)
+    print(f"SESSION: loaded from env ({len(decoded)} bytes)", flush=True)
 else:
     SESSION_PATH = os.environ.get("SESSION_PATH", "sessions/telegram_session")
     print("SESSION: loading from file", flush=True)
