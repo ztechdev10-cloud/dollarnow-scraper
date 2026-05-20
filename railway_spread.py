@@ -1,8 +1,9 @@
-import asyncio, os, sys, base64, gzip
+import asyncio, os, sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 from dotenv import load_dotenv
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.tl.functions.contacts import SearchRequest
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.types import Channel, Chat
@@ -14,21 +15,13 @@ load_dotenv()
 API_ID   = int(os.environ["TELEGRAM_API_ID"])
 API_HASH = os.environ["TELEGRAM_API_HASH"]
 
-# ─── إعداد ملف الجلسة من متغير البيئة ───
-SESSION_B64 = os.environ.get("TELEGRAM_SESSION_B64", "")
-SESSION_PATH = "/tmp/telegram_session"
-
-if SESSION_B64:
-    decoded = base64.b64decode(SESSION_B64)
-    try:
-        decoded = gzip.decompress(decoded)
-    except Exception:
-        pass
-    with open(SESSION_PATH + ".session", "wb") as f:
-        f.write(decoded)
-    print(f"SESSION: loaded from env ({len(decoded)} bytes)", flush=True)
+# ─── إعداد الجلسة من StringSession (أبسط وأكثر موثوقية) ───
+SESSION_STRING = os.environ.get("TELEGRAM_SESSION_STRING", "")
+if SESSION_STRING:
+    SESSION = StringSession(SESSION_STRING)
+    print(f"SESSION: loaded StringSession ({len(SESSION_STRING)} chars)", flush=True)
 else:
-    SESSION_PATH = os.environ.get("SESSION_PATH", "sessions/telegram_session")
+    SESSION = "sessions/telegram_session"
     print("SESSION: loading from file", flush=True)
 
 # ─── الرسالة (نص مع رابط تحميل بدل الملف) ───
@@ -238,7 +231,7 @@ async def send_to(client, chat, name, members):
 
 async def main():
     client = TelegramClient(
-        SESSION_PATH, API_ID, API_HASH,
+        SESSION, API_ID, API_HASH,
         connection_retries=10,
         retry_delay=5,
         timeout=60,

@@ -22,16 +22,11 @@ jobs:
       - name: Install dependencies
         run: pip install telethon==1.37.0 python-dotenv==1.0.1
 
-      - name: Restore Telegram session
-        env:
-          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
-        run: python restore_session.py
-
       - name: Run spread script
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+          TELEGRAM_SESSION_STRING: ${{ secrets.TELEGRAM_SESSION_STRING }}
           DOWNLOAD_LINK: ${{ secrets.DOWNLOAD_LINK }}
           PYTHONIOENCODING: utf-8
         run: python railway_spread.py
