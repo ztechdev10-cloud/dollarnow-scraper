@@ -157,7 +157,7 @@ async def search_and_collect(client, term, found):
             if members >= 50:
                 found[chat.id] = chat
                 print(f"FOUND: {chat.title} ({members})", flush=True)
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.3)
     except FloodWaitError as e:
         print(f"FLOOD_SEARCH: {e.seconds}s", flush=True)
         await asyncio.sleep(e.seconds + 2)
@@ -178,7 +178,7 @@ async def search_and_collect(client, term, found):
                     if members >= 50:
                         found[chat.id] = chat
                         print(f"FOUND_RETRY: {chat.title} ({members})", flush=True)
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.3)
             except Exception as e2:
                 print(f"ERR_SEARCH_RETRY: {term[:20]} | {str(e2)[:60]}", flush=True)
         else:
@@ -197,7 +197,7 @@ async def send_to(client, chat, name, members):
         await client.send_message(chat, MESSAGE, parse_mode='md')
         sent_ids.add(chat.id)
         print(f"OK: {name} ({members})", flush=True)
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
     except SlowModeWaitError as e:
         sent_ids.add(chat.id)
         print(f"SLOWMODE: {name} (wait {e.seconds}s)", flush=True)
@@ -210,7 +210,7 @@ async def send_to(client, chat, name, members):
             await client.send_message(chat, MESSAGE, parse_mode='md')
             sent_ids.add(chat.id)
             print(f"OK_RETRY: {name}", flush=True)
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
         except Exception as e2:
             sent_ids.add(chat.id)
             print(f"FAIL_RETRY: {name} | {str(e2)[:60]}", flush=True)
