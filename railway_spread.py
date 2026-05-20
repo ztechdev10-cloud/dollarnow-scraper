@@ -244,21 +244,6 @@ async def main():
                 print(f"ERR_LOOP: {chat.title[:30]} | {type(e).__name__}: {e}", flush=True)
 
     print(f"DONE: {total_ok} sent / {len(found)} found", flush=True)
-
-    # إعادة التشغيل بعد 6 ساعات
-    print("Sleeping 6 hours before next round...", flush=True)
-    await asyncio.sleep(6 * 3600)
     await client.disconnect()
 
-# تشغيل متكرر بلا توقف
-async def run_forever():
-    while True:
-        try:
-            await main()
-        except (KeyboardInterrupt, SystemExit):
-            break
-        except Exception as e:
-            print(f"MAIN_CRASH: {e} - restarting in 60s", flush=True)
-            await asyncio.sleep(60)
-
-asyncio.run(run_forever())
+asyncio.run(main())

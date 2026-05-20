@@ -1,0 +1,40 @@
+name: Syria Telegram Spread
+
+on:
+  schedule:
+    # كل 6 ساعات
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # تشغيل يدوي عند الحاجة
+
+jobs:
+  spread:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # أقصى 5 ساعات و50 دقيقة
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install telethon==1.37.0 python-dotenv==1.0.1
+
+      - name: Restore Telegram session
+        run: |
+          mkdir -p /tmp
+          echo "${{ secrets.TELEGRAM_SESSION_B64 }}" | base64 -d > /tmp/telegram_session.session
+          echo "Session restored: $(wc -c < /tmp/telegram_session.session) bytes"
+
+      - name: Run spread script
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+          DOWNLOAD_LINK: ${{ secrets.DOWNLOAD_LINK }}
+          PYTHONIOENCODING: utf-8
+        run: python railway_spread.py
+        timeout-minutes: 340
