@@ -2,14 +2,13 @@ name: Syria Telegram Spread
 
 on:
   schedule:
-    # كل 6 ساعات
     - cron: '0 */6 * * *'
-  workflow_dispatch:  # تشغيل يدوي عند الحاجة
+  workflow_dispatch:
 
 jobs:
   spread:
     runs-on: ubuntu-latest
-    timeout-minutes: 350   # أقصى 5 ساعات و50 دقيقة
+    timeout-minutes: 350
 
     steps:
       - name: Checkout code
@@ -24,16 +23,9 @@ jobs:
         run: pip install telethon==1.37.0 python-dotenv==1.0.1
 
       - name: Restore Telegram session
-        run: |
-          mkdir -p /tmp
-          echo "${{ secrets.TELEGRAM_SESSION_B64 }}" | base64 -d | python3 -c "
-import sys, gzip
-data = sys.stdin.buffer.read()
-try: data = gzip.decompress(data)
-except: pass
-with open('/tmp/telegram_session.session','wb') as f: f.write(data)
-print(f'Session restored: {len(data)} bytes')
-"
+        env:
+          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+        run: python restore_session.py
 
       - name: Run spread script
         env:
