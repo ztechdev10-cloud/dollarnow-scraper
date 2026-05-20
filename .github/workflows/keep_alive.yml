@@ -2,7 +2,7 @@ name: Keep Alive — منع إيقاف الجدول
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # كل 6 ساعات
+    - cron: '0 */2 * * *'   # كل ساعتين
   workflow_dispatch:
 
 jobs:
