@@ -20,11 +20,10 @@ SESSION_PATH = "/tmp/telegram_session"
 
 if SESSION_B64:
     decoded = base64.b64decode(SESSION_B64)
-    # دعم النسخة المضغوطة (gzip) أو غير المضغوطة
     try:
         decoded = gzip.decompress(decoded)
     except Exception:
-        pass  # ليست مضغوطة، استخدمها كما هي
+        pass
     with open(SESSION_PATH + ".session", "wb") as f:
         f.write(decoded)
     print(f"SESSION: loaded from env ({len(decoded)} bytes)", flush=True)
@@ -144,8 +143,17 @@ def is_group(chat):
         return True
     return False
 
+async def ensure_connected(client):
+    """تأكد من الاتصال وأعد الاتصال إذا لزم."""
+    if not client.is_connected():
+        print("RECONNECT: reconnecting...", flush=True)
+        await client.connect()
+        await asyncio.sleep(3)
+        print("RECONNECT: done", flush=True)
+
 async def search_and_collect(client, term, found):
     try:
+        await ensure_connected(client)
         result = await client(SearchRequest(q=term, limit=50))
         for chat in result.chats:
             if chat.id in found or not is_group(chat):
@@ -161,12 +169,33 @@ async def search_and_collect(client, term, found):
         print(f"FLOOD_SEARCH: {e.seconds}s", flush=True)
         await asyncio.sleep(e.seconds + 2)
     except Exception as e:
-        print(f"ERR_SEARCH: {term[:20]} | {e}", flush=True)
+        err = str(e)
+        if "disconnected" in err.lower():
+            print(f"DISCONNECT: {term[:20]}, reconnecting...", flush=True)
+            try:
+                await client.connect()
+                await asyncio.sleep(5)
+                result = await client(SearchRequest(q=term, limit=50))
+                for chat in result.chats:
+                    if chat.id in found or not is_group(chat):
+                        continue
+                    if getattr(chat, 'restricted', False):
+                        continue
+                    members = getattr(chat, 'participants_count', 0) or 0
+                    if members >= 50:
+                        found[chat.id] = chat
+                        print(f"FOUND_RETRY: {chat.title} ({members})", flush=True)
+                await asyncio.sleep(1)
+            except Exception as e2:
+                print(f"ERR_SEARCH_RETRY: {term[:20]} | {str(e2)[:60]}", flush=True)
+        else:
+            print(f"ERR_SEARCH: {term[:20]} | {err[:60]}", flush=True)
 
 async def send_to(client, chat, name, members):
     if chat.id in sent_ids:
         return
     try:
+        await ensure_connected(client)
         try:
             await client(JoinChannelRequest(chat))
             await asyncio.sleep(2)
@@ -184,6 +213,7 @@ async def send_to(client, chat, name, members):
         print(f"FLOOD: {e.seconds}s (waiting {wait}s) - {name}", flush=True)
         await asyncio.sleep(wait + 3)
         try:
+            await ensure_connected(client)
             await client.send_message(chat, MESSAGE, parse_mode='md')
             sent_ids.add(chat.id)
             print(f"OK_RETRY: {name}", flush=True)
@@ -199,6 +229,9 @@ async def send_to(client, chat, name, members):
         if any(x in err for x in ["FORBIDDEN","BANNED","RESTRICTED","PRIVACY","seconds is required"]):
             sent_ids.add(chat.id)
             print(f"SKIP: {name}", flush=True)
+        elif "disconnected" in err.lower():
+            sent_ids.add(chat.id)
+            print(f"SKIP_DISCONNECT: {name}", flush=True)
         else:
             sent_ids.add(chat.id)
             print(f"FAIL: {name} | {err[:60]}", flush=True)
@@ -206,50 +239,46 @@ async def send_to(client, chat, name, members):
 async def main():
     client = TelegramClient(
         SESSION_PATH, API_ID, API_HASH,
-        connection_retries=5,
+        connection_retries=10,
         retry_delay=5,
         timeout=60,
+        auto_reconnect=True,
     )
-    try:
-        await client.connect()
-    except Exception as e:
-        print(f"CONNECT_ERR: {e}", flush=True)
-        return
 
-    if not await client.is_user_authorized():
-        print("ERROR: not authorized - check TELEGRAM_SESSION_B64", flush=True)
-        return
+    async with client:
+        if not await client.is_user_authorized():
+            print("ERROR: not authorized - check TELEGRAM_SESSION_B64", flush=True)
+            return
 
-    me = await client.get_me()
-    print(f"LOGIN: {me.first_name} ({me.phone})", flush=True)
-    print(f"TOTAL_TERMS: {len(SEARCH_TERMS)}", flush=True)
+        me = await client.get_me()
+        print(f"LOGIN: {me.first_name} ({me.phone})", flush=True)
+        print(f"TOTAL_TERMS: {len(SEARCH_TERMS)}", flush=True)
 
-    found = {}
-    total_ok = 0
+        found = {}
+        total_ok = 0
 
-    for i, term in enumerate(SEARCH_TERMS):
-        print(f"SEARCH {i+1}/{len(SEARCH_TERMS)}: {term}", flush=True)
-        try:
-            await search_and_collect(client, term, found)
-        except Exception as e:
-            print(f"ERR_SEARCH_OUTER: {e}", flush=True)
-
-        to_send = sorted(
-            [c for c in found.values() if c.id not in sent_ids],
-            key=lambda x: getattr(x, 'participants_count', 0), reverse=True
-        )
-        for chat in to_send:
+        for i, term in enumerate(SEARCH_TERMS):
+            print(f"SEARCH {i+1}/{len(SEARCH_TERMS)}: {term}", flush=True)
             try:
-                await send_to(client, chat, chat.title, getattr(chat, 'participants_count', 0))
-                if chat.id in sent_ids:
-                    total_ok += 1
-                    print(f"PROGRESS: {total_ok} sent / {len(found)} found", flush=True)
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except BaseException as e:
-                print(f"ERR_LOOP: {chat.title[:30]} | {type(e).__name__}: {e}", flush=True)
+                await search_and_collect(client, term, found)
+            except Exception as e:
+                print(f"ERR_SEARCH_OUTER: {e}", flush=True)
 
-    print(f"DONE: {total_ok} sent / {len(found)} found", flush=True)
-    await client.disconnect()
+            to_send = sorted(
+                [c for c in found.values() if c.id not in sent_ids],
+                key=lambda x: getattr(x, 'participants_count', 0), reverse=True
+            )
+            for chat in to_send:
+                try:
+                    await send_to(client, chat, chat.title, getattr(chat, 'participants_count', 0))
+                    if chat.id in sent_ids:
+                        total_ok += 1
+                        print(f"PROGRESS: {total_ok} sent / {len(found)} found", flush=True)
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except BaseException as e:
+                    print(f"ERR_LOOP: {chat.title[:30]} | {type(e).__name__}: {e}", flush=True)
+
+        print(f"DONE: {total_ok} sent / {len(found)} found", flush=True)
 
 asyncio.run(main())
