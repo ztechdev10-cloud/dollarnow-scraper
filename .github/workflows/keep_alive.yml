@@ -2,7 +2,7 @@ name: Keep Alive — منع إيقاف الجدول
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # كل 6 ساعات — يُشغّل الـ spread تلقائياً
+    - cron: '0 */6 * * *'   # كل 6 ساعات
   workflow_dispatch:
 
 jobs:
@@ -13,11 +13,16 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: تحديث ملف الإبقاء وتشغيل الـ spread
+      - name: تحديث ملف الإبقاء
         run: |
           echo "$(date '+%Y-%m-%d %H:%M:%S UTC')" > .keep_alive
           git config user.name  "GitHub Actions Bot"
           git config user.email "actions@github.com"
           git add .keep_alive
-          git commit -m "chore: trigger spread $(date '+%Y-%m-%d %H:%M')" || echo "no change"
+          git commit -m "chore: keep alive $(date '+%Y-%m-%d %H:%M')" || echo "no change"
           git push || echo "push failed"
+
+      - name: تشغيل Spread
+        run: gh workflow run spread.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

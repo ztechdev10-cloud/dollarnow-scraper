@@ -3,9 +3,6 @@ name: Syria Telegram Spread
 on:
   schedule:
     - cron: '0 */6 * * *'
-  push:
-    paths:
-      - '.keep_alive'
   workflow_dispatch:
 
 concurrency:
