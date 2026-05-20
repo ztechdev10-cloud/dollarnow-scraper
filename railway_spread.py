@@ -157,9 +157,11 @@ async def search_and_collect(client, term, found):
             if members >= 50:
                 found[chat.id] = chat
                 print(f"FOUND: {chat.title} ({members})", flush=True)
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(1)
     except FloodWaitError as e:
-        print(f"FLOOD_SEARCH: {e.seconds}s", flush=True)
+        print(f"FLOOD_SEARCH: {e.seconds}s — skipping", flush=True)
+        if e.seconds > 60:
+            return  # skip this term, don't block for hours
         await asyncio.sleep(e.seconds + 2)
     except Exception as e:
         err = str(e)
@@ -178,7 +180,7 @@ async def search_and_collect(client, term, found):
                     if members >= 50:
                         found[chat.id] = chat
                         print(f"FOUND_RETRY: {chat.title} ({members})", flush=True)
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(1)
             except Exception as e2:
                 print(f"ERR_SEARCH_RETRY: {term[:20]} | {str(e2)[:60]}", flush=True)
         else:
