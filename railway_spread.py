@@ -156,7 +156,7 @@ async def search_and_collect(client, term, found):
             if getattr(chat, 'restricted', False):
                 continue
             members = getattr(chat, 'participants_count', 0) or 0
-            if members >= 50:
+            if members >= 20:
                 found[chat.id] = chat
                 print(f"FOUND: {chat.title} ({members})", flush=True)
         await asyncio.sleep(1)
@@ -179,7 +179,7 @@ async def search_and_collect(client, term, found):
                     if getattr(chat, 'restricted', False):
                         continue
                     members = getattr(chat, 'participants_count', 0) or 0
-                    if members >= 50:
+                    if members >= 20:
                         found[chat.id] = chat
                         print(f"FOUND_RETRY: {chat.title} ({members})", flush=True)
                 await asyncio.sleep(1)
@@ -201,6 +201,7 @@ async def send_to(client, chat, name, members):
         if JOIN_ONLY:
             sent_ids.add(chat.id)
             print(f"JOINED: {name} ({members})", flush=True)
+            await asyncio.sleep(1)
             return
         await client.send_message(chat, MESSAGE, parse_mode='md')
         sent_ids.add(chat.id)
