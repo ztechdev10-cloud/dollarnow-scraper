@@ -1,4 +1,4 @@
-import asyncio, os, sys
+import asyncio, os, sys, json
 sys.stdout.reconfigure(encoding='utf-8')
 
 from dotenv import load_dotenv
@@ -256,7 +256,27 @@ async def main():
         print(f"LOGIN: {me.first_name} ({me.phone})", flush=True)
         print(f"TOTAL_TERMS: {len(SEARCH_TERMS)}", flush=True)
 
+        # ─── تحميل القروبات المحفوظة من runs سابقة ───
         found = {}
+        GROUPS_FILE = "groups.json"
+        if os.path.exists(GROUPS_FILE):
+            try:
+                saved = json.load(open(GROUPS_FILE, encoding='utf-8'))
+                for g in saved:
+                    # نضيف stub يحتوي على id وtitle فقط لإعادة البناء
+                    class _G:
+                        pass
+                    obj = _G()
+                    obj.id = g["id"]
+                    obj.title = g["title"]
+                    obj.participants_count = g.get("members", 0)
+                    obj.restricted = False
+                    obj.megagroup = True
+                    found[obj.id] = obj
+                print(f"LOADED: {len(found)} saved groups", flush=True)
+            except Exception as e:
+                print(f"LOAD_ERR: {e}", flush=True)
+
         total_ok = 0
 
         for i, term in enumerate(SEARCH_TERMS):
@@ -280,6 +300,15 @@ async def main():
                     raise
                 except BaseException as e:
                     print(f"ERR_LOOP: {chat.title[:30]} | {type(e).__name__}: {e}", flush=True)
+
+        # ─── حفظ القروبات المكتشفة للـ runs القادمة ───
+        try:
+            data = [{"id": c.id, "title": c.title, "members": getattr(c, 'participants_count', 0)}
+                    for c in found.values()]
+            json.dump(data, open(GROUPS_FILE, 'w', encoding='utf-8'), ensure_ascii=False)
+            print(f"SAVED: {len(data)} groups to {GROUPS_FILE}", flush=True)
+        except Exception as e:
+            print(f"SAVE_ERR: {e}", flush=True)
 
         print(f"DONE: {total_ok} sent / {len(found)} found", flush=True)
 
